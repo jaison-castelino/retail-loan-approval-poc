@@ -16,7 +16,20 @@ def configured():
     return bool(PROJECT and DATASET)
 
 def _client():
+    """Use a service-account key from secrets if provided (hosted apps); otherwise fall back to gcloud login (local)."""
     from google.cloud import bigquery
+    info = os.environ.get("GCP_SERVICE_ACCOUNT_JSON")
+    if not info:
+        try:
+            import streamlit as st
+            if "gcp_service_account" in st.secrets: info = dict(st.secrets["gcp_service_account"])
+        except Exception:
+            pass
+    if info:
+        import json
+        from google.oauth2 import service_account
+        info = json.loads(info) if isinstance(info, str) else info
+        return bigquery.Client(project=PROJECT, credentials=service_account.Credentials.from_service_account_info(info))
     return bigquery.Client(project=PROJECT)
 
 def _schemas():
