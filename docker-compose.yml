@@ -1,0 +1,17 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8501:8501"
+    environment:
+      # Leave empty to run on local synthetic data (the default). Set both to try BigQuery.
+      GCP_PROJECT_ID: ${GCP_PROJECT_ID:-}
+      BQ_DATASET: ${BQ_DATASET:-}
+      BQ_MIRROR: ${BQ_MIRROR:-true}
+    volumes:
+      - loan_data:/data   # keeps decisions and the audit trail across restarts
+      # Optional, BigQuery only: share your gcloud login read-only (never bake keys into the image).
+      # - ${HOME}/.config/gcloud:/root/.config/gcloud:ro
+
+volumes:
+  loan_data:

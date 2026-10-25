@@ -1,0 +1,7 @@
+.env
+*.db
+*.json
+__pycache__/
+.git/
+.venv/
+.pytest_cache/
