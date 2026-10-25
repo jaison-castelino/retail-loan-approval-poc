@@ -1,0 +1,2 @@
+PL-2.4 | Repayment history
+A payment more than {dpd_refer} days past due in the last 12 months requires manual review. A payment more than {dpd_fail} days past due in the last 12 months is a decline recommendation.

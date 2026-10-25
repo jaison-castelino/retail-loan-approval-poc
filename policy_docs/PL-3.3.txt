@@ -1,0 +1,2 @@
+PL-3.3 | External verification
+Results from external verification services that are unavailable, inconsistent or adverse require manual review. Services: credit bureau, bank account verification and fraud screening.

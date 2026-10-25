@@ -1,0 +1,2 @@
+PL-2.1 | Bureau credit score
+A credit bureau score below {score_fail} is a decline recommendation. A score from {score_fail} to {score_refer_m1} requires manual credit officer review.

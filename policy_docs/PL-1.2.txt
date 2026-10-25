@@ -1,0 +1,2 @@
+PL-1.2 | Employment continuity
+Applicants should have at least {min_years} years of total employment. A shorter history is a policy exception.

@@ -1,0 +1,2 @@
+PL-4.2 | Approval authority
+Approval authority depends on the requested amount: up to INR {auth_1:,} the branch credit officer, up to INR {auth_2:,} the regional credit manager, above that the zonal credit committee.

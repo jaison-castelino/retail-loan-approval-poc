@@ -1,0 +1,2 @@
+PL-3.2 | Name consistency
+The applicant name must match across the application and identity records. A mismatch requires manual review for possible fraud or data error.

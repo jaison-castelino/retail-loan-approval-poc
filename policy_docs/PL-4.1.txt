@@ -1,0 +1,2 @@
+PL-4.1 | Escalation
+Any exception, conflict or unresolved concern must be escalated to a human credit officer. AI output is a recommendation and not a sanction.

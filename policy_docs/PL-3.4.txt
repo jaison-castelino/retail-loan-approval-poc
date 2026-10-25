@@ -1,0 +1,2 @@
+PL-3.4 | Income evidence
+Income stated in the application must be supported by the salary slip. A difference of more than 10% requires manual review.

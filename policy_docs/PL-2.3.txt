@@ -1,0 +1,2 @@
+PL-2.3 | Loan size
+The requested amount must not exceed {income_multiple} times gross monthly income.

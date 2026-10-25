@@ -1,0 +1,2 @@
+PL-2.2 | Fixed obligations to income ratio
+Fixed obligations to income ratio (existing EMIs plus proposed EMI, divided by gross monthly income) above {foir_fail}% is a decline recommendation. Above {foir_refer}% requires manual review.

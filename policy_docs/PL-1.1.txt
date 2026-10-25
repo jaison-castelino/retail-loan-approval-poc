@@ -1,0 +1,2 @@
+PL-1.1 | Applicant age
+Applicants must be aged {min_age} to {max_age} years at application. Age outside this range is a policy exception.
