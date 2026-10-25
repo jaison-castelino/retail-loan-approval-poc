@@ -10,7 +10,7 @@ services:
       BQ_MIRROR: ${BQ_MIRROR:-true}
     volumes:
       - loan_data:/data   # keeps decisions and the audit trail across restarts
-      # Optional, BigQuery only: share your gcloud login read-only (never bake keys into the image).
+      # Optional, BigQuery only
       # - ${HOME}/.config/gcloud:/root/.config/gcloud:ro
 
 volumes:

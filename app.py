@@ -1,3 +1,6 @@
+"""Agentic AI Loan Approval Workbench - PROOF OF CONCEPT (synthetic data only).
+Run: pip install streamlit pandas plotly ; streamlit run app.py
+Fictional Bank (not a real bank). No real bureau/Aadhaar/PAN/RBI calls are made."""
 import datetime as dt
 import pandas as pd
 import plotly.express as px
@@ -10,43 +13,23 @@ RATE = 11.5  # indicative annual rate, synthetic
 from logic import emi_calc
 import data
 import policy
+import mocks
+import docreader
+from agents import run_agents
 
 def ts():
     return dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 # ---------- Agents (deterministic rules; no LLM needed) ----------
-def run_agents(a):
-    log, flags = [], []
-    def step(agent, action, evidence, outcome):
-        log.append(dict(Agent=agent, Action=action, Evidence=evidence, Outcome=outcome, Timestamp=ts()))
-    req = {"PAN", "Salary slip", "Bank statement"}
-    missing = sorted(req - set(a["docs"]))
-    step("Document Agent", "Check mandatory documents", f"Received: {', '.join(a['docs'])}", "Complete" if not missing else f"Missing: {', '.join(missing)}")
-    match = a["pan_name"].lower() == a["name"].lower()
-    step("Document Agent", "Cross-check applicant name vs PAN record (mock)", f"Form: {a['name']} | PAN: {a['pan_name']}", "Match" if match else "Conflict")
-    step("Credit Agent", "Fetch mock bureau score", f"Mock bureau score {a['score']}", "Good" if a["score"] >= 720 else "Fair" if a["score"] >= 680 else "Weak")
-    new_emi = emi_calc(a["amount"], a["tenure"])
-    foir = (a["emi"] + new_emi) / a["income"] * 100
-    step("Affordability Agent", "Compute FOIR after new EMI", f"Existing EMI {a['emi']:,}, new EMI {new_emi:,.0f}, income {a['income']:,}", f"FOIR {foir:.1f}% (policy cap 50%)")
-    findings = policy.evaluate(a, foir, missing, match)
-    for f in findings:
-        step("Policy Agent", f"{f['check']} - clause {f['clause_id']}", f["evidence"], f"{f['result']}: {f['detail']}")
-    fails = [f for f in findings if f["result"] == "Fail"]
-    refers = [f for f in findings if f["result"] == "Refer"]
-    flags += [f"Clause {f['clause_id']} ({f['check']}): {f['detail']}" for f in fails + refers]
-    if fails: rec = "Recommend DECLINE"
-    elif missing: rec = "REFER - request documents"
-    elif refers: rec = "REFER - manual review"
-    else: rec = "Recommend APPROVE"
-    step("Recommendation Agent", "Assemble evidence-based recommendation", f"{len(flags)} flag(s); score {a['score']}; FOIR {foir:.1f}%", rec)
-    return dict(log=log, flags=flags, rec=rec, foir=foir, new_emi=new_emi, findings=findings)
-
 @st.cache_data(show_spinner=False, ttl=300)
 def _load_apps():
     return data.load_applicants()
 APPS, DATA_SOURCE = _load_apps()
-for a in APPS:
-    a.update(run_agents(a))
+@st.cache_data(show_spinner=False, ttl=300)
+def _load_profiles():
+    apps, _ = data.load_applicants()
+    return data.load_profiles(apps)
+PROFILES, PROFILE_SOURCE = _load_profiles()
 
 if "decisions" not in st.session_state:
     (st.session_state.decisions, st.session_state.audit,
@@ -64,11 +47,23 @@ def status(a):
 def audit(appid, event):
     t = ts(); st.session_state.audit.append(dict(Time=t, Application=appid, Event=event)); data.save_audit(t, appid, event)
 
+def rec_group(a): return "Approve" if a["rec"].endswith("APPROVE") else "Decline" if a["rec"].endswith("DECLINE") else "Refer"
+def agrees(a, c): return (c == "Approved" and rec_group(a) == "Approve") or (c == "Declined" and rec_group(a) == "Decline") or (c == "Info requested" and rec_group(a) == "Refer")
+
 # ---------- Sidebar ----------
 st.sidebar.title("Fictional Bank")
+st.sidebar.caption("Fictional bank | Proof of concept | Synthetic data only")
 page = st.sidebar.radio("Navigate", ["Loan Approval Workbench", "Approach Story", "Technical Architecture", "About and FAQ"])
 (st.sidebar.success if DATA_SOURCE.startswith("BigQuery") else st.sidebar.info)(f"Data source: {DATA_SOURCE}")
+st.sidebar.caption(f"Credit profile source: {PROFILE_SOURCE}")
 st.sidebar.warning("AI output is a recommendation only. It is not a sanction or a legally binding lending decision.")
+with st.sidebar.expander("Policy settings (illustrative, not RBI rules)"):
+    policy.T["score_fail"] = st.number_input("Decline below bureau score", 300, 900, 680, key="t1")
+    policy.T["score_refer"] = st.number_input("Manual review below bureau score", 300, 900, 720, key="t2")
+    policy.T["foir_fail"] = st.number_input("Decline above FOIR %", 10, 100, 50, key="t3")
+    policy.T["foir_refer"] = st.number_input("Manual review above FOIR %", 10, 100, 40, key="t4")
+for a in APPS:
+    a.update(run_agents(a, PROFILES.get(a["id"]) if PROFILES else None, PROFILE_SOURCE if PROFILES else None))
 
 # ---------- Page 1 ----------
 def workbench():
@@ -82,12 +77,21 @@ def workbench():
     c[3].metric("Declined", sts.count("Declined"))
     c[4].metric("Flagged", sts.count("Flagged"))
 
-    df = pd.DataFrame([dict(ID=a["id"], Applicant=a["name"], Amount=a["amount"], MonthlyIncome=a["income"], CreditScore=a["score"], DTI_pct=round(a["foir"], 1), Status=status(a), Scenario=a["scenario"]) for a in apps])
+    df = pd.DataFrame([dict(ID=a["id"], Applicant=a["name"], Amount=a["amount"], MonthlyIncome=a["income"], CreditScore=a["score"], DTI_pct=round(a["foir"], 1), Status=status(a), AI=rec_group(a), Scenario=a["scenario"]) for a in apps])
     q = st.text_input("Search register (ID, name, status, scenario)")
     if q:
         df = df[df.apply(lambda r: q.lower() in " ".join(map(str, r.values)).lower(), axis=1)]
     st.dataframe(df, width="stretch", hide_index=True)
-    st.plotly_chart(px.bar(df, x="Applicant", y="DTI_pct", color="Status", title="Debt-to-income after new EMI (%)").add_hline(y=50, line_dash="dash"), width="stretch")
+    st.subheader("Portfolio view")
+    c1, c2, c3 = st.columns(3)
+    c1.plotly_chart(px.bar(df.groupby("AI").size().reset_index(name="Applications"), x="AI", y="Applications", color="AI", title="AI recommendation mix"), width="stretch")
+    c2.plotly_chart(px.histogram(df, x="CreditScore", color="AI", nbins=20, title="Bureau score by recommendation"), width="stretch")
+    dec = [(x, st.session_state.decisions[x["id"]]) for x in apps if x["id"] in st.session_state.decisions]
+    if dec:
+        c3.metric("Officer overrides", f"{sum(1 for x, d in dec if not agrees(x, d['decision']))} of {len(dec)}")
+        c3.plotly_chart(px.histogram(pd.DataFrame([dict(AI=rec_group(x), Officer=d["decision"]) for x, d in dec]), x="AI", color="Officer", barmode="group", title="Officer decision vs AI"), width="stretch")
+    else:
+        c3.info("No officer decisions yet. Record one to see override rates.")
 
     tab_detail, tab_new = st.tabs(["Application detail", "New application"])
     with tab_new:
@@ -102,13 +106,13 @@ def workbench():
             yrs = c3.number_input("Years in employment", 0, 40, 3)
             files = st.file_uploader("Sample PDFs (PAN, salary slip, bank statement)", type="pdf", accept_multiple_files=True)
             if st.form_submit_button("Submit application"):
-                docs = [("PAN" if "pan" in f.name.lower() else "Salary slip" if "sal" in f.name.lower() else "Bank statement") for f in files]
+                docs, dfind = docreader.analyse(files)
                 score = 600 + (hash(n) % 200)  # mock bureau, synthetic
-                na = dict(id=f"PL-{1007 + len(st.session_state.extra)}", name=n, age=age, income=inc, emi=ex, amount=amt, tenure=ten, score=score, docs=docs or ["PAN"], pan_name=n, years=yrs, scenario="User submitted")
+                na = dict(id=f"PL-{9001 + len(st.session_state.extra)}", name=n, age=age, income=inc, emi=ex, amount=amt, tenure=ten, score=score, docs=docs or ["PAN"], doc_findings=dfind or None, pan_name=n, years=yrs, scenario="User submitted")
                 na.update(run_agents(na))
                 st.session_state.extra.append(na)
                 audit(na["id"], "Application submitted; agents run")
-                st.success(f"Submitted as {na['id']}. Name the files with 'pan', 'salary', 'statement' to mark documents as received.")
+                st.success(f"Submitted as {na['id']}. Text-based PDFs are read with pypdf; try the files in the samples folder.")
                 st.rerun()
     with tab_detail:
         sel = st.selectbox("Select application", [a["id"] for a in apps])
@@ -125,8 +129,10 @@ def detail(a):
         st.markdown("**Risk and affordability**")
         st.write(f"Credit score (mock bureau): **{a['score']}**")
         st.write(f"Proposed EMI: **INR {a['new_emi']:,.0f}** at {RATE}% p.a. for {a['tenure']} months")
-        st.write(f"FOIR after loan: **{a['foir']:.1f}%** (cap 50%)")
+        st.write(f"FOIR after loan: **{a['foir']:.1f}%** (cap {policy.T['foir_fail']}%)")
         st.markdown(f"### {a['rec']}")
+        st.caption(f"Decision authority (illustrative delegation): {a['authority']}")
+        st.caption("Agent output validation: " + ("passed" if a["validated"] else "FAILED, escalated to a human"))
         for f in a["flags"] or ["No risk flags raised"]:
             st.write("- " + f)
     with c2:
@@ -135,6 +141,19 @@ def detail(a):
             ("Name, age, income", "Application form (synthetic)"), ("Credit score", "Mock bureau API (simulated)"),
             ("PAN name", "Mock identity verification (simulated)"), ("Existing EMIs", "Synthetic account data (BigQuery in target design)"),
             ("Policy rules", "Synthetic policy PL-2026 v1")], columns=["Field", "Source"]), hide_index=True, width="stretch")
+    with st.expander("Existing loans and repayment history (last 12 months)"):
+        st.caption("Source: " + a["credit"]["source"])
+        if a["profile"]["loans"]:
+            st.dataframe(pd.DataFrame(a["profile"]["loans"]).drop(columns=["applicant_id"], errors="ignore"), hide_index=True, width="stretch")
+            late = [r for r in a["profile"]["repayments"] if r["days_past_due"] > 0]
+            if late:
+                st.dataframe(pd.DataFrame(late)[["loan_id", "month", "days_past_due", "status"]], hide_index=True, width="stretch")
+            else:
+                st.success("No late payments in the last 12 months.")
+        else:
+            st.info("No existing loan accounts.")
+    with st.expander("External checks (all MOCK responses)"):
+        st.dataframe(pd.DataFrame([dict(Service=r["service"], Status=r["status"], Detail=r["note"], SimulatedLatencyMs=r["latency_ms"], Label=r["label"]) for r in a["ext"].values()]), hide_index=True, width="stretch")
     with st.expander("Policy evidence: clause-level findings", expanded=True):
         st.caption(policy.POLICY_NAME)
         st.dataframe(pd.DataFrame([dict(Check=f["check"], Result=f["result"], Why=f["detail"], Evidence=f["evidence"], Clause=f["clause_id"],
@@ -159,7 +178,11 @@ def detail(a):
                 st.rerun()
     if d and d["decision"] == "Approved":
         st.markdown("**Sanction terms (simulated)**")
-        st.write(f"Sanctioned INR {a['amount']:,} | {RATE}% p.a. | {a['tenure']} months | EMI INR {a['new_emi']:,.0f} | Processing fee 1% (INR {a['amount'] * 0.01:,.0f})")
+        tot = a["new_emi"] * a["tenure"]
+        st.dataframe(pd.DataFrame([("Sanctioned amount", f"INR {a['amount']:,}"), ("Interest rate (illustrative)", f"{RATE}% p.a."), ("Tenure", f"{a['tenure']} months"),
+            ("EMI", f"INR {a['new_emi']:,.0f}"), ("Processing fee (1%)", f"INR {a['amount'] * 0.01:,.0f}"), ("Total interest", f"INR {tot - a['amount']:,.0f}"),
+            ("Total payable", f"INR {tot:,.0f}"), ("Cooling-off", "3 days to exit without penalty (fictional bank policy)")], columns=["Item", "Value"]), hide_index=True, width="stretch")
+        st.caption("Illustrative Key Fact Statement style summary. Not a regulatory document.")
         if a["id"] not in st.session_state.accepted:
             st.caption("Stage 2 of 3: customer acceptance of sanction terms")
             if st.button("Record customer acceptance of terms (simulated)", key="ac" + a["id"]):
@@ -224,7 +247,7 @@ D->P->C->R->H;D->H[style=dashed,label=" conflict"];C->H[style=dashed,label=" hig
     st.divider()
 
     st.header("Potential business value")
-    st.caption("These are expected benefits to tests in a pilot. This demo has no measured results.")
+    st.caption("These are expected benefits to test in a pilot. This demo has no measured results.")
     st.table(pd.DataFrame({
         "Benefit": ["Less manual effort", "More consistent checks", "Better traceability", "Potentially shorter turnaround"],
         "How it could happen": ["Routine document and rule checks are prepared automatically", "The same rules and thresholds apply to every file", "Every step records the agent, evidence, outcome and time", "Fewer hand-offs and less re-keying"],
@@ -263,7 +286,7 @@ E->P;P->A1;P->A3;A1->A2->A4;A3->A4;A2->K1;A3->K2;A1->D1;A3->D2;A3->D3;A4->G1;G1-
             ("7 Sanction and acceptance", "Credit officer, customer (simulated)", "Sanction terms", "Separate stages"),
             ("8 Disbursement", "Operations (simulated)", "Accepted terms", "Only after acceptance")],
             columns=["Stage", "Who acts", "Data used", "Control point"]), hide_index=True, width="stretch")
-        st.caption("Not modelled: delegation of authority by loan size, KFS and cooling-off handling, and fraud screening beyond name consistency.")
+        st.caption("Not modelled: a real Key Fact Statement and cooling-off process (an illustrative summary is shown) and a real fraud service.")
     with tab_t:
         st.subheader("Technical components")
         st.graphviz_chart("""digraph{rankdir=TB;node[shape=box,style="rounded,filled",fontname="Helvetica",fillcolor="#eef3fb"];
@@ -274,15 +297,17 @@ UI[label="9 Streamlit UI"];HUM[label="10 Human credit officer",fillcolor="#ffe9c
 SRC->ING->VAL->BQ->RET->AG;EXT->AG;BR->AG;AG->UI->HUM;HUM->GOV;AG->GOV[style=dashed]}""")
         st.table(pd.DataFrame([
             ("Intake and workbench", "Streamlit app (app.py)", "Implemented"),
-            ("Document review", "Document agent in run_agents", "Simulated: checks file names and a mock PAN name, does not read PDFs"),
-            ("Identity and bureau checks", "Inline mock values in app.py and data.py", "Simulated, not separate services"),
-            ("Fraud screening", "Name-consistency check only", "Partial; no fraud screening service"),
+            ("Document review", "Document agent + docreader.py (pypdf)", "Implemented for text PDFs you upload (name, income); pre-generated findings for built-in cases; no OCR"),
+            ("Bureau, PAN, bank and fraud checks", "mocks.py (local mock services)", "Simulated: deterministic mock responses incl. unavailable, inconsistent and adverse cases"),
+            ("Delegation of authority", "policy.authority()", "Implemented as fictional amount bands; display only"),
             ("Affordability", "logic.py (EMI, FOIR)", "Implemented, unit tested"),
-            ("Policy lookup and rules", "policy.py (8 illustrative clauses, keyword retrieval, Python rules)", "Implemented, unit tested; no uploaded policy documents"),
+            ("Policy lookup and rules", "policy.py reading policy_docs/*.txt (11 illustrative clauses, keyword retrieval, Python rules)", "Implemented, unit tested; thresholds editable in sidebar"),
             ("Recommendation", "Rule-based, no LLM", "Implemented"),
             ("Human decision and stages", "Streamlit controls; override reason required", "Implemented; sanction, acceptance and disbursement are simulated"),
             ("Audit trail", "SQLite, with best-effort copy to BigQuery", "Implemented; BigQuery copy not guaranteed"),
-            ("Data platform", "BigQuery applicants table via load_to_bigquery.py; local fallback", "Applicants, decisions and audit tables only; accounts, transactions and bureau tables are conceptual"),
+            ("Credit and repayment review", "agents.py credit_assess over existing_loans and repayment_history", "Implemented on synthetic data; read from BigQuery when those tables are loaded"),
+            ("Agent output validation", "agents.py validate_output", "Implemented: structure checks; invalid output is escalated to a human"),
+            ("Data platform", "BigQuery: 12 tables via load_to_bigquery.py; local fallback; CSV export via generate_data.py", "Implemented; decisions and audit events are copied best-effort; never tested against your production data by me"),
             ("Access control and encryption", "Cloud IAM, role-based access", "Conceptual, not implemented"),
             ("LLM summaries", "None", "Not built")], columns=["Business function", "Technical component", "Status"]))
 
@@ -294,11 +319,12 @@ def about():
 **Synthetic data:** all applicants, scores and documents are fictional. Mock services only; no real systems are called.""")
     for q, ans in [("Does the AI approve loans?", "No. It produces a recommendation with evidence. A credit officer decides and must justify any override."),
                    ("Is an LLM used?", "No. Agents here are deterministic Python rules. An LLM could be added later as an optional, off-by-default summariser, never the sole decision-maker."),
-                   ("Is BigQuery used?", "Not in this build. The sidebar shows the true data source.")]:
+                   ("Is BigQuery used?", "Optionally. The sidebar says whether data really came from BigQuery or from local synthetic data.")]:
         with st.expander(q): st.write(ans)
     st.subheader("Limitations and future work")
-    st.markdown("- Agents are simplified; PDFs are not text-extracted yet\n- No BigQuery or SQLite persistence yet\n- Roughly 6 demo applicants, not 300\n- Mock APIs are inline logic, not separate services")
+    st.markdown("- Agents are deterministic rules, not an LLM\n- PDF reading works for text PDFs only; no OCR\n- Bureau, PAN, bank and fraud services are local mocks\n- BigQuery holds 12 synthetic tables; decisions and audit events are copied best-effort\n- No real Key Fact Statement or cooling-off process")
     st.subheader("Contact")
     st.write("Presales team: presales@fictional.com | +91-00000-00000")
+    st.caption("Placeholder contact details for this demo.")
 
 {"Loan Approval Workbench": workbench, "About and FAQ": about, "Approach Story": story, "Technical Architecture": arch}[page]()

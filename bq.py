@@ -32,14 +32,27 @@ def _client():
         return bigquery.Client(project=PROJECT, credentials=service_account.Credentials.from_service_account_info(info))
     return bigquery.Client(project=PROJECT)
 
+SPEC = {
+    "applicants": "id:S name:S age:I income:I emi:I amount:I tenure:I score:I docs:S* pan_name:S years:I scenario:S",
+    "decisions": "id:S decision:S reason:S officer:S time:S",
+    "audit_events": "time:S application:S event:S",
+    "loan_applications": "application_id:S applicant_id:S requested_amount:I tenure_months:I purpose:S submitted_on:S recommendation:S",
+    "customer_accounts": "account_id:S applicant_id:S account_type:S avg_balance:I years_open:I",
+    "transactions": "txn_id:S applicant_id:S account_id:S month:S txn_type:S amount:I",
+    "existing_loans": "loan_id:S applicant_id:S loan_type:S monthly_emi:I outstanding:I remaining_months:I",
+    "repayment_history": "loan_id:S applicant_id:S month:S days_past_due:I status:S",
+    "bureau_results": "applicant_id:S status:S score:I enquiries_6m:I active_loans:I note:S latency_ms:I",
+    "document_findings": "applicant_id:S doc_type:S status:S source:S",
+    "policy_rules": "clause_id:S title:S text:S",
+    "agent_logs": "application_id:S seq:I agent:S action:S evidence:S outcome:S source:S timestamp:S"}
+
 def _schemas():
     from google.cloud.bigquery import SchemaField as F
-    return {
-        "applicants": [F("id", "STRING"), F("name", "STRING"), F("age", "INTEGER"), F("income", "INTEGER"), F("emi", "INTEGER"),
-                       F("amount", "INTEGER"), F("tenure", "INTEGER"), F("score", "INTEGER"), F("docs", "STRING", mode="REPEATED"),
-                       F("pan_name", "STRING"), F("years", "INTEGER"), F("scenario", "STRING")],
-        "decisions": [F("id", "STRING"), F("decision", "STRING"), F("reason", "STRING"), F("officer", "STRING"), F("time", "STRING")],
-        "audit_events": [F("time", "STRING"), F("application", "STRING"), F("event", "STRING")]}
+    types = {"S": "STRING", "I": "INTEGER"}
+    out = {}
+    for t, spec in SPEC.items():
+        out[t] = [F(f.split(":")[0], types[f.split(":")[1].rstrip("*")], mode="REPEATED" if f.endswith("*") else "NULLABLE") for f in spec.split()]
+    return out
 
 def ping():
     """Return (ok, message). Never raises."""
@@ -55,13 +68,18 @@ def _load(table, rows, truncate=False):
     cfg = bigquery.LoadJobConfig(schema=_schemas()[table], write_disposition="WRITE_TRUNCATE" if truncate else "WRITE_APPEND")
     _client().load_table_from_json(rows, f"{PROJECT}.{DATASET}.{table}", job_config=cfg).result()
 
-def setup_and_load(apps):
-    """Create tables (via load jobs) and upload applicants. Empty decision/audit tables are created too."""
+def load_all(tables):
+    """Create every table, then replace the generated ones. decisions and audit_events are created if missing and never wiped."""
     from google.cloud import bigquery
     c = _client()
     for t, sch in _schemas().items():
         c.create_table(bigquery.Table(f"{PROJECT}.{DATASET}.{t}", schema=sch), exists_ok=True)
-    _load("applicants", [{k: a[k] for k in ("id","name","age","income","emi","amount","tenure","score","docs","pan_name","years","scenario")} for a in apps], truncate=True)
+    for t, rows in tables.items():
+        if t not in ("decisions", "audit_events") and rows: _load(t, rows, truncate=True)
+
+def read_table(name):
+    rows = _client().query(f"SELECT * FROM `{PROJECT}.{DATASET}.{name}`").result()
+    return [dict(r.items()) for r in rows]
 
 def read_applicants():
     rows = _client().query(f"SELECT * FROM `{PROJECT}.{DATASET}.applicants` ORDER BY id").result()

@@ -1,9 +1,13 @@
-"""One-off: create tables in your BigQuery dataset and upload the synthetic applicants.
-Run:  python load_to_bigquery.py"""
-import bq, data
-ok, msg = bq.ping()
-print("Connection:", msg)
+"""Create the BigQuery tables and upload synthetic data.
+Usage:  python load_to_bigquery.py --n 1000
+Replaces the generated tables. Never touches existing rows in decisions or audit_events."""
+import argparse
+import bq, data, tables
+
+p = argparse.ArgumentParser(); p.add_argument("--n", type=int, default=300); args = p.parse_args()
+ok, msg = bq.ping(); print("Connection:", msg)
 if ok:
-    apps = data.DEMO_APPS + data.generate_applicants(294)
-    bq.setup_and_load(apps)
-    print(f"Uploaded {len(apps)} applicants to {bq.PROJECT}.{bq.DATASET}.applicants")
+    tbl = tables.build_tables(data.default_applicants(args.n))
+    bq.load_all(tbl)
+    for n, rows in tbl.items(): print(f"{n}: {len(rows)} rows" if n not in ("decisions", "audit_events") else f"{n}: created if missing, existing rows kept")
+    print(f"Uploaded to {bq.PROJECT}.{bq.DATASET}")

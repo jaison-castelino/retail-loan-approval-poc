@@ -1,7 +1,7 @@
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import policy
-EXPECT = {"age": "PL-1.1", "employment": "PL-1.2", "score": "PL-2.1", "foir": "PL-2.2", "loan": "PL-2.3", "docs": "PL-3.1", "name": "PL-3.2"}
+EXPECT = {"age": "PL-1.1", "employment": "PL-1.2", "score": "PL-2.1", "foir": "PL-2.2", "loan": "PL-2.3", "docs": "PL-3.1", "name": "PL-3.2", "external": "PL-3.3", "income": "PL-3.4", "repayment": "PL-2.4"}
 
 def test_retrieval_finds_right_clause():
     for k, cid in EXPECT.items():

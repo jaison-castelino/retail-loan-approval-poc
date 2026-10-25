@@ -1,7 +1,20 @@
+# Secrets and credentials (never commit)
 .env
+secrets.toml
+*.json
+
+# Local data
+*.db
+generated_data/
+
+# Python
 __pycache__/
 *.pyc
 .venv/
-*.db
-secrets.toml
-*.json
+.pytest_cache/
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
